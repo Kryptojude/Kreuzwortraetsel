@@ -21,6 +21,12 @@ namespace Kreuzworträtsel
         string[,] grid = new string[20, 20];
         List<(string Question, string Answer)> database = new List<(string, string)>();
         int databaseIndex = 0;
+
+        private void Capitalize()
+        {
+
+        }
+
         public Form1()
         {
             InitializeComponent();
@@ -28,19 +34,22 @@ namespace Kreuzworträtsel
             Height = grid.GetLength(0) * ts + 39;
 
             // Fetch database
-            StreamReader reader = new StreamReader("database.txt");
+            StreamReader reader = new StreamReader("databaseDeutsch.txt");
             string line = reader.ReadLine();
             while (line != null)
             {
                 database.Add(("", line));
                 line = reader.ReadLine();
             }
+
+            Capitalize();
+
             ScrambleDatabase();
 
             // Bottom right tile can't have question in it
             grid[grid.GetUpperBound(0), grid.GetUpperBound(1)] = "blocked";
 
-            // Go through each tile
+            // Go through each tile (make it random ?)
             int questionCounter = 0;
             for (int y = 0; y < grid.GetLength(0); y++)
             {
@@ -55,9 +64,8 @@ namespace Kreuzworträtsel
             }
         }
 
-        private (int, int) SetDirection(string mode)
+        private void SetDirection(string mode, ref (int horizontal, int vertical) direction)
         {
-            (int horizontal, int vertical) direction = (0, 0);
             switch (mode)
             {
                 case "horizontal":
@@ -79,27 +87,30 @@ namespace Kreuzworträtsel
                         direction = (1, 0);
                     break;
             }
-            return direction;
         }
 
         private void FillQuestionAndAnswer(ref int questionCounter, int x, int y)
         {
-            //Show();
-            //Refresh();
+            Show();
+            Refresh();
 
             // Determine direction of the text, edges have to have certain orientation
-            (int horizontal, int vertical) direction;
+            (int horizontal, int vertical) direction = (0, 0);
             if (y == grid.GetUpperBound(0)) // bottom row -> horizontal
-                direction = SetDirection("horizontal");
+                SetDirection("horizontal", ref direction);
+
             else if (x == grid.GetUpperBound(1)) // right column -> vertical
-                direction = SetDirection("vertical");
-            else if (y == 0) // top row -> vertical
-                direction = SetDirection("vertical");
+                SetDirection("vertical", ref direction);
+
+            else if (y == 0) // top row -> vertical // top row and left column can be both directions with offset
+                SetDirection("random", ref direction);
+
             else if (x == 0) // left column -> horizontal
-                direction = SetDirection("horizontal");
+                SetDirection("random", ref direction);
+
             else // not on any edge, so make it random
             {
-                direction = SetDirection("random");
+                SetDirection("random", ref direction);
             }
 
             // bottom right corner: has "blocked" value
@@ -110,7 +121,7 @@ namespace Kreuzworträtsel
             Point offset = new Point();
             if (y == 0 && x == 0)
             {
-                direction = SetDirection("random");
+                SetDirection("random", ref direction);
                 // offset
                 if (direction.horizontal == 1)
                 {
@@ -162,7 +173,7 @@ namespace Kreuzworträtsel
                 {
                     // Try other direction
                     directionsTested++;
-                    SetDirection("swap");
+                    SetDirection("swap", ref direction);
                     if (directionsTested == 1)
                         goto retryAfterDirectionChange;
                     else
@@ -181,9 +192,7 @@ namespace Kreuzworträtsel
                     // check match with toBeMatched string
                     for (int i = 0; i < answer.Length; i++)
                     {
-                        if (toBeMatched[i] == ' ')
-                            continue;
-                        else if (answer[i] != toBeMatched[i])
+                        if (toBeMatched[i] != ' ' && answer[i] != toBeMatched[i])
                             error = true;
                     }
                 }
@@ -193,7 +202,6 @@ namespace Kreuzworträtsel
                 if (toBeMatched.Length > answer.Length)
                     if (toBeMatched[answer.Length] != ' ')
                         error = true;
-
 
                 attempt++;
             }
