@@ -22,11 +22,6 @@ namespace Kreuzworträtsel
         List<(string Question, string Answer)> database = new List<(string, string)>();
         int databaseIndex = 0;
 
-        private void Capitalize()
-        {
-
-        }
-
         public Form1()
         {
             InitializeComponent();
@@ -38,11 +33,11 @@ namespace Kreuzworträtsel
             string line = reader.ReadLine();
             while (line != null)
             {
-                database.Add(("", line));
+                string question = line.Substring(0, line.IndexOf(';'));
+                string answer = line.Substring(line.IndexOf(';') + 1);
+                database.Add((question, answer));
                 line = reader.ReadLine();
             }
-
-            Capitalize();
 
             ScrambleDatabase();
 
