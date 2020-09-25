@@ -25,10 +25,11 @@ namespace Kreuzworträtsel
         public Form1()
         {
             InitializeComponent();
+            //Adjust window size to the grid
             Width = grid.GetLength(1) * ts + 16;
             Height = grid.GetLength(0) * ts + 39;
 
-            // Fetch database
+            // Fetch database from file
             StreamReader reader = new StreamReader("databaseDeutsch.txt");
             string line = reader.ReadLine();
             while (line != null)
@@ -38,131 +39,93 @@ namespace Kreuzworträtsel
                 database.Add((question, answer));
                 line = reader.ReadLine();
             }
-
+            
             ScrambleDatabase();
 
-            // Bottom right tile can't have question in it
+            // Block bottom right tile from having question tile in it
             grid[grid.GetUpperBound(0), grid.GetUpperBound(1)] = "blocked";
 
-            // Go through each tile (make it random ?)
+            // Go through each edge tile
             int questionCounter = 0;
-            for (int y = 0; y < grid.GetLength(0); y++)
+            for (int y = 0; y < grid.GetLength(0); y += grid.GetUpperBound(0))
             {
-                for (int x = 0; x < grid.GetLength(1); x++)
+                for (int x = 0; x < grid.GetLength(1); x += grid.GetUpperBound(1))
                 {
-                    // If tile is empty
+                    // If tile is empty (no question tile, no letter, not blocked)
                     if (grid[y, x] == null)
                     {
-                        FillQuestionAndAnswer(ref questionCounter, x, y);
+                        FillQuestionEdges(ref questionCounter, x, y);
+                    }
+                }
+            }
+            
+            // Go through each main tile
+            for (int y = 1; y < grid.GetLength(0) - 1; y++)
+            {
+                for (int x = 1; x < grid.GetLength(1) - 1; x++)
+                {
+                    // If tile is empty (no question tile, no letter, not blocked)
+                    if (grid[y, x] == null)
+                    {
+                        FillQuestionMain(ref questionCounter, x, y);
                     }
                 }
             }
         }
-
-        private void SetDirection(string directionMode, ref (int horizontal, int vertical) direction)
-        {
-            switch (directionMode)
-            {
-                case "horizontal":
-                    direction = (1, 0);
-                    break;
-                case "vertical":
-                    direction = (0, 1);
-                    break;
-                case "random":
-                    if (random.Next(2) == 0)
-                        direction = (1, 0);
-                    else
-                        direction = (0, 1);
-                    break;
-                case "swap":
-                    if (direction.horizontal == 1)
-                        direction = (0, 1);
-                    else
-                        direction = (1, 0);
-                    break;
-            }
-
-        }
-        
-        private void SetOffset(ref Point offset, (int horizontal, int vertical) direction, int x, int y)
-        {
-            // Offset at all?
-            int percentChance = 50;
-            if (random.Next(100/percentChance) == 1)
-            {
-                // Determine offset based on direction
-                int r = random.Next(2);
-                switch (direction.horizontal)
-                {
-                    case 1: // horizontal
-                        offset.X = -1;
-                        offset.Y = (r == 0) ? 1 : -1;
-                    break;
-                    case 0: // vertical
-                        offset.X = (r == 0) ? 1 : -1;
-                        offset.Y = -1;
-                        break;
-                }
-
-                // Out of bounds check
-                // Get coordinate of first letter
-                Point p = new Point();
-                p.X = x + direction.horizontal + offset.X; // x, y is question tile
-                p.Y = y + direction.vertical + offset.Y;
-                if (p.X < grid.GetLowerBound(1) || p.X > grid.GetUpperBound(1) ||
-                    p.Y < grid.GetLowerBound(0) || p.Y > grid.GetUpperBound(0))
-                    offset = new Point(0, 0);
-            }
-        }
-
-        private void FillQuestionAndAnswer(ref int questionCounter, int x, int y)
+        /// <summary>
+        /// Fills the top, left, bottom and right edges of the grid
+        /// </summary>
+        private void FillQuestionEdges(ref int questionCounter, int x, int y)
         {
             Show();
-            Refresh();
+            //Refresh();
 
-            bool directionLocked = false;
             // Determine direction of the text, edges have to have certain orientation
-            (int horizontal, int vertical) direction = (0,0);
-            Point offset = new Point(0,0);
-            if (y == grid.GetUpperBound(0)) // bottom row
+            (int horizontal, int vertical) direction = (0, 0);
+            bool directionLocked = false;
+            Point offset = new Point(0, 0);
+
+            // Bottom row
+            if (y == grid.GetUpperBound(0))
             {
                 SetDirection("horizontal", ref direction);
                 directionLocked = true;
             }
-            else if (x == grid.GetUpperBound(1)) // right column
+            // Right column
+            else if (x == grid.GetUpperBound(1))
             {
                 SetDirection("vertical", ref direction);
                 directionLocked = true;
             }
-            else if (y == 0) // top row
+            // Top row
+            else if (y == 0)
             {
                 SetDirection("vertical", ref direction);
                 SetOffset(ref offset, direction, x, y);
                 directionLocked = true;
             }
-            else if (x == 0) // left column
+            // Left column
+            else if (x == 0)
             {
                 SetDirection("horizontal", ref direction);
                 SetOffset(ref offset, direction, x, y);
                 directionLocked = true;
             }
-            else // not on any edge, so make it random
-            {
-                SetDirection("random", ref direction);
-            }
+            else
+                throw new Exception("this function was called for the wrong tile, should be edge tile but wasn't");
 
-            // Overwrite direction and offset for top left corner (special case)
+            // Top left corner special case
+            // Overwrite direction and offset
 
-            //bottom right corner: has "blocked" value
-            //bottom left corner: bottom and left edges are both horizontal
-            //top right corner: top and right edges are both vertical
-            //top left corner: vertical takes precedence in if/else edge check, 
-            //                 but make it random since it can be both ways with offset
+            // Bottom right corner: Has "blocked" value
+            // Bottom left corner:  Bottom and left edges are both horizontal
+            // Top right corner:    Top and right edges are both vertical
+            // Top left corner:     Vertical takes precedence in if/else edge check, 
+            //                      but make it random since it can be both ways with offset
             if (y == 0 && x == 0)
             {
                 SetDirection("random", ref direction);
-                // special offset
+
                 if (direction.horizontal == 1)
                 {
                     offset.X = -1;
@@ -175,6 +138,26 @@ namespace Kreuzworträtsel
                 }
             }
 
+            FillAnswer(direction, offset, directionLocked, questionCounter, x, y);
+        }
+
+        private void FillQuestionMain(ref int questionCounter, int x, int y)
+        {
+            Show();
+            //Refresh();
+
+            // Determine direction of the text
+            (int horizontal, int vertical) direction = (0,0);
+            bool directionLocked = false;
+            Point offset = new Point(0,0);
+
+            SetDirection("random", ref direction);
+
+            FillAnswer(direction, offset, directionLocked, questionCounter, x, y);
+        }
+
+        private void FillAnswer((int horizontal, int vertical) direction, Point offset, bool directionLocked, int questionCounter, int x, int y)
+        {
             int directionsTested = 0;
             retryAfterDirectionChange:
             // Determine maximum length and what the answer has to match
@@ -183,7 +166,7 @@ namespace Kreuzworträtsel
             {
                 // Get current coordinate
                 Point p = new Point();
-                p.X = x + (direction.horizontal * (toBeMatched.Length + 1)  + offset.X); // (x,y) is question tile, so +1 for start of answer
+                p.X = x + (direction.horizontal * (toBeMatched.Length + 1) + offset.X); // (x,y) is question tile, so +1 for start of answer
                 p.Y = y + (direction.vertical * (toBeMatched.Length + 1) + offset.Y);
 
                 // Out of bounds check
@@ -195,8 +178,8 @@ namespace Kreuzworträtsel
                 // Question tile / blocked tile check
                 else if (grid[p.Y, p.X].Contains("►") ||
                          grid[p.Y, p.X].Contains("▼") ||
-                         grid[p.Y, p.X] == "blocked" )
-                         break;
+                         grid[p.Y, p.X] == "blocked")
+                    break;
 
                 // Must be letter tile, bc not question tile/blocked and not null
                 else
@@ -279,9 +262,69 @@ namespace Kreuzworträtsel
             if (letterY + direction.vertical < grid.GetLength(0) && letterX + direction.horizontal < grid.GetLength(1))
                 // empty tile check for next question tile
                 if (grid[letterY + direction.vertical, letterX + direction.horizontal] == null)
-                    FillQuestionAndAnswer(ref questionCounter, letterX + direction.horizontal, letterY + direction.vertical);
+                    FillQuestionMain(ref questionCounter, letterX + direction.horizontal, letterY + direction.vertical);
         }
 
+        private void SetDirection(string directionMode, ref (int horizontal, int vertical) direction)
+        {
+            switch (directionMode)
+            {
+                case "horizontal":
+                    direction = (1, 0);
+                    break;
+                case "vertical":
+                    direction = (0, 1);
+                    break;
+                case "random":
+                    if (random.Next(2) == 0)
+                        direction = (1, 0);
+                    else
+                        direction = (0, 1);
+                    break;
+                case "swap":
+                    if (direction.horizontal == 1)
+                        direction = (0, 1);
+                    else
+                        direction = (1, 0);
+                    break;
+            }
+
+        }
+
+        private void SetOffset(ref Point offset, (int horizontal, int vertical) direction, int x, int y)
+        {
+            // Offset at all?
+            int percentChance = 50;
+            if (random.Next(100/percentChance) == 1)
+            {
+                // Determine offset based on direction
+                int r = random.Next(2);
+                switch (direction.horizontal)
+                {
+                    case 1: // horizontal
+                        offset.X = -1;
+                        offset.Y = (r == 0) ? 1 : -1;
+                    break;
+                    case 0: // vertical
+                        offset.X = (r == 0) ? 1 : -1;
+                        offset.Y = -1;
+                        break;
+                }
+
+                // Out of bounds check
+                // Get coordinate of first letter
+                Point p = new Point();
+                p.X = x + direction.horizontal + offset.X; // x, y is question tile
+                p.Y = y + direction.vertical + offset.Y;
+                if (p.X < grid.GetLowerBound(1) || p.X > grid.GetUpperBound(1) ||
+                    p.Y < grid.GetLowerBound(0) || p.Y > grid.GetUpperBound(0))
+                    offset = new Point(0, 0);
+            }
+        }
+
+        /// <summary>
+        /// Returns next question/answer tuple, increments databaseIndex
+        /// </summary>
         private (string, string) FetchAnswer()
         {
             (string, string Answer) tuple = database[databaseIndex];
@@ -293,6 +336,9 @@ namespace Kreuzworträtsel
             return tuple;
         }
 
+        /// <summary>
+        /// Randomizes the order of the question/answer pairs
+        /// </summary>
         private void ScrambleDatabase()
         {
             List<(string Question, string Answer)> database2 = new List<(string Question, string Answer)>();
