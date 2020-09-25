@@ -85,32 +85,46 @@ namespace Kreuzworträtsel
 
         }
         
-        private void SetOffset(ref Point offset, (int horizontal, int vertical) direction)
+        private void SetOffset(ref Point offset, (int horizontal, int vertical) direction, int x, int y)
         {
-            // Determine offset
-            int r = random.Next(2);
-            switch (direction.horizontal)
+            // Offset at all?
+            int percentChance = 50;
+            if (random.Next(100/percentChance) == 1)
             {
-                case 1: // horizontal
-                    offset.X = -1;
-                    offset.Y = (r == 0) ? 1 : -1;
-                break;
-                case 0: // vertical
-                    offset.X = (r == 0) ? 1 : -1;
-                    offset.Y = -1;
+                // Determine offset based on direction
+                int r = random.Next(2);
+                switch (direction.horizontal)
+                {
+                    case 1: // horizontal
+                        offset.X = -1;
+                        offset.Y = (r == 0) ? 1 : -1;
                     break;
+                    case 0: // vertical
+                        offset.X = (r == 0) ? 1 : -1;
+                        offset.Y = -1;
+                        break;
+                }
+
+                // Out of bounds check
+                // Get coordinate of first letter
+                Point p = new Point();
+                p.X = x + direction.horizontal + offset.X; // x, y is question tile
+                p.Y = y + direction.vertical + offset.Y;
+                if (p.X < grid.GetLowerBound(1) || p.X > grid.GetUpperBound(1) ||
+                    p.Y < grid.GetLowerBound(0) || p.Y > grid.GetUpperBound(0))
+                    offset = new Point(0, 0);
             }
         }
 
         private void FillQuestionAndAnswer(ref int questionCounter, int x, int y)
         {
             Show();
-            //Refresh();
+            Refresh();
 
             bool directionLocked = false;
             // Determine direction of the text, edges have to have certain orientation
-            (int horizontal, int vertical) direction = (0, 0);
-            Point offset = new Point();
+            (int horizontal, int vertical) direction = (0,0);
+            Point offset = new Point(0,0);
             if (y == grid.GetUpperBound(0)) // bottom row
             {
                 SetDirection("horizontal", ref direction);
@@ -118,19 +132,19 @@ namespace Kreuzworträtsel
             }
             else if (x == grid.GetUpperBound(1)) // right column
             {
-                SetDirection("vertical", ref direction); // Probably will get error when offset tries to put question to the right for top row, but it's top right corner
+                SetDirection("vertical", ref direction);
                 directionLocked = true;
             }
             else if (y == 0) // top row
             {
                 SetDirection("vertical", ref direction);
-                SetOffset(ref offset, direction);
+                SetOffset(ref offset, direction, x, y);
                 directionLocked = true;
             }
             else if (x == 0) // left column
             {
                 SetDirection("horizontal", ref direction);
-                SetOffset(ref offset, direction);
+                SetOffset(ref offset, direction, x, y);
                 directionLocked = true;
             }
             else // not on any edge, so make it random
@@ -138,16 +152,17 @@ namespace Kreuzworträtsel
                 SetDirection("random", ref direction);
             }
 
-            // Handle corner direction and offset (special case)
-            // bottom right corner: has "blocked" value
-            // bottom left corner: bottom and left edges are both horizontal
-            // top right corner: top and right edges are both vertical
-            // top left corner: vertical takes precedence in if/else edge check, 
-            //                  but make it random since it can be both ways with offset
+            // Overwrite direction and offset for top left corner (special case)
+
+            //bottom right corner: has "blocked" value
+            //bottom left corner: bottom and left edges are both horizontal
+            //top right corner: top and right edges are both vertical
+            //top left corner: vertical takes precedence in if/else edge check, 
+            //                 but make it random since it can be both ways with offset
             if (y == 0 && x == 0)
             {
                 SetDirection("random", ref direction);
-                // offset
+                // special offset
                 if (direction.horizontal == 1)
                 {
                     offset.X = -1;
@@ -162,7 +177,7 @@ namespace Kreuzworträtsel
 
             int directionsTested = 0;
             retryAfterDirectionChange:
-            // Determine maximum length and what answer has to match
+            // Determine maximum length and what the answer has to match
             string toBeMatched = "";
             while (true)
             {
