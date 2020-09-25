@@ -59,9 +59,9 @@ namespace Kreuzworträtsel
             }
         }
 
-        private void SetDirection(string mode, ref (int horizontal, int vertical) direction)
+        private void SetDirection(string directionMode, ref (int horizontal, int vertical) direction)
         {
-            switch (mode)
+            switch (directionMode)
             {
                 case "horizontal":
                     direction = (1, 0);
@@ -82,38 +82,68 @@ namespace Kreuzworträtsel
                         direction = (1, 0);
                     break;
             }
+
+        }
+        
+        private void SetOffset(ref Point offset, (int horizontal, int vertical) direction)
+        {
+            // Determine offset
+            int r = random.Next(2);
+            switch (direction.horizontal)
+            {
+                case 1: // horizontal
+                    offset.X = -1;
+                    offset.Y = (r == 0) ? 1 : -1;
+                break;
+                case 0: // vertical
+                    offset.X = (r == 0) ? 1 : -1;
+                    offset.Y = -1;
+                    break;
+            }
         }
 
         private void FillQuestionAndAnswer(ref int questionCounter, int x, int y)
         {
             Show();
-            Refresh();
+            //Refresh();
 
+            bool directionLocked = false;
             // Determine direction of the text, edges have to have certain orientation
             (int horizontal, int vertical) direction = (0, 0);
-            if (y == grid.GetUpperBound(0)) // bottom row -> horizontal
+            Point offset = new Point();
+            if (y == grid.GetUpperBound(0)) // bottom row
+            {
                 SetDirection("horizontal", ref direction);
-
-            else if (x == grid.GetUpperBound(1)) // right column -> vertical
+                directionLocked = true;
+            }
+            else if (x == grid.GetUpperBound(1)) // right column
+            {
+                SetDirection("vertical", ref direction); // Probably will get error when offset tries to put question to the right for top row, but it's top right corner
+                directionLocked = true;
+            }
+            else if (y == 0) // top row
+            {
                 SetDirection("vertical", ref direction);
-
-            else if (y == 0) // top row -> vertical // top row and left column can be both directions with offset
-                SetDirection("random", ref direction);
-
-            else if (x == 0) // left column -> horizontal
-                SetDirection("random", ref direction);
-
+                SetOffset(ref offset, direction);
+                directionLocked = true;
+            }
+            else if (x == 0) // left column
+            {
+                SetDirection("horizontal", ref direction);
+                SetOffset(ref offset, direction);
+                directionLocked = true;
+            }
             else // not on any edge, so make it random
             {
                 SetDirection("random", ref direction);
             }
 
+            // Handle corner direction and offset (special case)
             // bottom right corner: has "blocked" value
             // bottom left corner: bottom and left edges are both horizontal
             // top right corner: top and right edges are both vertical
             // top left corner: vertical takes precedence in if/else edge check, 
             //                  but make it random since it can be both ways with offset
-            Point offset = new Point();
             if (y == 0 && x == 0)
             {
                 SetDirection("random", ref direction);
@@ -136,20 +166,26 @@ namespace Kreuzworträtsel
             string toBeMatched = "";
             while (true)
             {
+                // Get current coordinate
                 Point p = new Point();
                 p.X = x + (direction.horizontal * (toBeMatched.Length + 1)  + offset.X); // (x,y) is question tile, so +1 for start of answer
                 p.Y = y + (direction.vertical * (toBeMatched.Length + 1) + offset.Y);
+
                 // Out of bounds check
                 if (p.Y > grid.GetUpperBound(0) || p.X > grid.GetUpperBound(1))
                     break;
-                if (grid[p.Y, p.X] == null)
-                    toBeMatched += " "; // tile was empty, so nothing to match
-                else if (grid[p.Y, p.X].Contains("►") || // question tile / blocked tile
+                // Empty tile check
+                else if (grid[p.Y, p.X] == null)
+                    toBeMatched += " ";
+                // Question tile / blocked tile check
+                else if (grid[p.Y, p.X].Contains("►") ||
                          grid[p.Y, p.X].Contains("▼") ||
                          grid[p.Y, p.X] == "blocked" )
                          break;
+
+                // Must be letter tile, bc not question tile/blocked and not null
                 else
-                { // letter tile, bc not question tile and not null
+                {
                     if (grid[p.Y, p.X].Length > 1)
                         throw new Exception("supposed letter tile contained more than one letter");
                     // Add that letter
@@ -158,6 +194,7 @@ namespace Kreuzworträtsel
             }
 
             // Fetch answer with correct length and letter match
+            (string Question, string Answer) databaseEntry = ("", "");
             string answer = "";
             bool error = true;
             int attempt = 0;
@@ -169,7 +206,7 @@ namespace Kreuzworträtsel
                     // Try other direction
                     directionsTested++;
                     SetDirection("swap", ref direction);
-                    if (directionsTested == 1)
+                    if (directionsTested == 1 && !directionLocked)
                         goto retryAfterDirectionChange;
                     else
                     {
@@ -178,7 +215,8 @@ namespace Kreuzworträtsel
                     }
                 }
 
-                answer = FetchAnswer();
+                databaseEntry = FetchAnswer();
+                answer = databaseEntry.Answer;
                 // Check if answer would fit
                 if (answer.Length > toBeMatched.Length)
                     error = true;
@@ -216,8 +254,8 @@ namespace Kreuzworträtsel
                 //Refresh();
             }
 
-            // Remove that question/answer from database (-1 bc the fetching function already incremented the index)
-            database.RemoveAt(databaseIndex - 1);
+            // Remove that question/answer from database
+            database.Remove(databaseEntry);
             if (databaseIndex >= database.Count)
                 databaseIndex = 0;
 
@@ -229,14 +267,15 @@ namespace Kreuzworträtsel
                     FillQuestionAndAnswer(ref questionCounter, letterX + direction.horizontal, letterY + direction.vertical);
         }
 
-        private string FetchAnswer()
+        private (string, string) FetchAnswer()
         {
             (string, string Answer) tuple = database[databaseIndex];
-            string answer = tuple.Answer;
+
             databaseIndex++;
             if (databaseIndex >= database.Count)
                 databaseIndex = 0;
-            return answer;
+
+            return tuple;
         }
 
         private void ScrambleDatabase()
