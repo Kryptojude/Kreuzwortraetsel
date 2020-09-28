@@ -21,6 +21,8 @@ namespace Kreuzworträtsel
         string[,] grid = new string[20, 20];
         List<(string Question, string Answer)> database = new List<(string, string)>();
         int databaseIndex = 0;
+        Point[] horizontalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(-1, 1) };
+        Point[] verticalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(1, -1) };
 
         public Form1()
         {
@@ -47,9 +49,10 @@ namespace Kreuzworträtsel
 
             // Go through each edge tile
             int questionCounter = 0;
+            // Top and bottom row
             for (int y = 0; y < grid.GetLength(0); y += grid.GetUpperBound(0))
             {
-                for (int x = 0; x < grid.GetLength(1); x += grid.GetUpperBound(1))
+                for (int x = 0; x < grid.GetLength(1); x++)
                 {
                     // If tile is empty (no question tile, no letter, not blocked)
                     if (grid[y, x] == null)
@@ -58,7 +61,19 @@ namespace Kreuzworträtsel
                     }
                 }
             }
-            
+            // Left and right column
+            for (int x = 0; x < grid.GetLength(0); x += grid.GetUpperBound(0))
+            {
+                for (int y = 1; y < grid.GetLength(1) - 1; y++)
+                {
+                    // If tile is empty (no question tile, no letter, not blocked)
+                    if (grid[y, x] == null)
+                    {
+                        FillQuestionEdges(ref questionCounter, x, y);
+                    }
+                }
+            }
+
             // Go through each main tile
             for (int y = 1; y < grid.GetLength(0) - 1; y++)
             {
@@ -78,38 +93,29 @@ namespace Kreuzworträtsel
         private void FillQuestionEdges(ref int questionCounter, int x, int y)
         {
             Show();
-            //Refresh();
+            Refresh();
 
             // Determine direction of the text, edges have to have certain orientation
             (int horizontal, int vertical) direction = (0, 0);
-            bool directionLocked = false;
             Point offset = new Point(0, 0);
 
             // Bottom row
             if (y == grid.GetUpperBound(0))
-            {
                 SetDirection("horizontal", ref direction);
-                directionLocked = true;
-            }
             // Right column
             else if (x == grid.GetUpperBound(1))
-            {
                 SetDirection("vertical", ref direction);
-                directionLocked = true;
-            }
             // Top row
             else if (y == 0)
             {
                 SetDirection("vertical", ref direction);
                 SetOffset(ref offset, direction, x, y);
-                directionLocked = true;
             }
             // Left column
             else if (x == 0)
             {
                 SetDirection("horizontal", ref direction);
                 SetOffset(ref offset, direction, x, y);
-                directionLocked = true;
             }
             else
                 throw new Exception("this function was called for the wrong tile, should be edge tile but wasn't");
@@ -138,28 +144,28 @@ namespace Kreuzworträtsel
                 }
             }
 
-            FillAnswer(direction, offset, directionLocked, questionCounter, x, y);
+            FillAnswer(direction, offset, true, false, ref questionCounter, x, y);
         }
 
         private void FillQuestionMain(ref int questionCounter, int x, int y)
         {
             Show();
-            //Refresh();
+            Refresh();
 
             // Determine direction of the text
             (int horizontal, int vertical) direction = (0,0);
-            bool directionLocked = false;
             Point offset = new Point(0,0);
 
             SetDirection("random", ref direction);
 
-            FillAnswer(direction, offset, directionLocked, questionCounter, x, y);
+            FillAnswer(direction, offset, false, true, ref questionCounter, x, y);
         }
 
-        private void FillAnswer((int horizontal, int vertical) direction, Point offset, bool directionLocked, int questionCounter, int x, int y)
+        private void FillAnswer((int horizontal, int vertical) direction, Point offset, bool directionLocked, bool offsetLocked, ref int questionCounter, int x, int y)
         {
             int directionsTested = 0;
-            retryAfterDirectionChange:
+            List<int> offsetsTested = new List<int>();
+            retryAfterDirectionOrOffsetChange:
             // Determine maximum length and what the answer has to match
             string toBeMatched = "";
             while (true)
@@ -201,15 +207,54 @@ namespace Kreuzworträtsel
                 error = false;
                 if (attempt == database.Count) // No possible word exists
                 {
-                    // Try other direction
                     directionsTested++;
-                    SetDirection("swap", ref direction);
-                    if (directionsTested == 1 && !directionLocked)
-                        goto retryAfterDirectionChange;
-                    else
+                    // Try other direction or offset
+                    if (directionLocked && !offsetLocked) // Edge tile
                     {
-                        grid[y, x] = "blocked";
-                        return;
+                        // What offset indicator has to be saved in the offsetsTested List?
+                        int save = 0;
+                        for (int i = 0; i < horizontalOffsets.Count(); i++)
+                        {
+                            if (direction.horizontal == 1)
+                                if (offset.X == verticalOffsets[i].X && offset.Y == verticalOffsets[i].Y)
+                                {
+                                    save = i;
+                                }
+                                else
+                                if (offset.X == verticalOffsets[i].X && offset.Y == verticalOffsets[i].Y)
+                                {
+                                    save = i;
+                                }
+                        }
+                        offsetsTested.Add(save);
+                        if (offsetsTested.Count == 1) // Test second offset
+                        {
+                            CycleOffset(offsetsTested, ref offset, direction);
+                            goto retryAfterDirectionOrOffsetChange;
+                        }
+                        else if (offsetsTested.Count == 2) // Test third offset
+                        {
+                            CycleOffset(offsetsTested, ref offset, direction);
+                            goto retryAfterDirectionOrOffsetChange;
+                        }
+                        else // Third offset failed aswell
+                        {
+                            grid[y, x] = "blocked";
+                            return;
+                        }
+                    }
+                    else if (!directionLocked && offsetLocked) // Main tile
+                    {
+                        if (directionsTested == 1) // Test second direction
+                        {
+                            SetDirection("swap", ref direction);
+                            goto retryAfterDirectionOrOffsetChange;
+                        }
+                        else // Second direction failed aswell
+                        {
+                            grid[y, x] = "blocked";
+                            return;
+                        }
                     }
                 }
 
@@ -294,8 +339,8 @@ namespace Kreuzworträtsel
         private void SetOffset(ref Point offset, (int horizontal, int vertical) direction, int x, int y)
         {
             // Offset at all?
-            int percentChance = 50;
-            if (random.Next(100/percentChance) == 1)
+            int percentChance = 66;
+            if (random.Next(1, 101) <= 66)
             {
                 // Determine offset based on direction
                 int r = random.Next(2);
@@ -308,7 +353,7 @@ namespace Kreuzworträtsel
                     case 0: // vertical
                         offset.X = (r == 0) ? 1 : -1;
                         offset.Y = -1;
-                        break;
+                    break;
                 }
 
                 // Out of bounds check
@@ -322,6 +367,24 @@ namespace Kreuzworträtsel
             }
         }
 
+        private void CycleOffset(List<int> offsetsTested, ref Point offset, (int horizontal, int vertical) direction)
+        {
+            List<int> indeces = new List<int> { 0, 1, 2 }; // TODO: Unfuck (indices get reset, so it's useless)
+            // Get offsets that haven't been tried
+            for (int i = 0; i < offsetsTested.Count(); i++)
+            {
+                if (offsetsTested[i] == indeces[i])
+                {
+                    indeces.Remove(indeces[i]);
+                    break;
+                }
+            }
+
+            if (direction.horizontal == 1)
+                offset = horizontalOffsets[random.Next(indeces.Count())];
+            else
+                offset = verticalOffsets[random.Next(indeces.Count())];
+        }
         /// <summary>
         /// Returns next question/answer tuple, increments databaseIndex
         /// </summary>
