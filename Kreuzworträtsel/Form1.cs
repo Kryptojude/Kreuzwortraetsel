@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.IO;
+using System.Diagnostics;
 
 namespace Kreuzworträtsel
 {
@@ -25,9 +26,16 @@ namespace Kreuzworträtsel
         /// <summary>
         /// Possible offsets for horizontal pointing question tiles
         /// </summary>
-        Point[] horizontalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(-1, 1) };
-        Point[] verticalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(1, -1) };
+        // TODO: offset probabilities are fucked because an offset for a top row tile to the left is impossible, since the loop goes from left to right, so the left neighbor tile is always occupied already
+        //static Point[] horizontalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(-1, 1), new Point(-1, 1)};
+        //static Point[] verticalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(1, -1), new Point(1, -1) };
+        static Point[] horizontalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(-1, 1) };
+        static Point[] verticalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(1, -1) };
+        Dictionary<int, Point[]> directionToOffsetTranslator = new Dictionary<int, Point[]>() { {0, verticalOffsets}, {1, horizontalOffsets} };
+        int offsetIndex = 0;
+        List<Point> reservedTiles = new List<Point>();
 
+        // TODO: implement offset arrows
         public Form1()
         {
             InitializeComponent();
@@ -57,7 +65,7 @@ namespace Kreuzworträtsel
                     // If tile is empty (no question tile, no letter, not blocked)
                     if (grid[y, x] == null)
                     {
-                        DetermineDirectionAndOffset(x, y);
+                        DetermineDirectionAndOffset(x, y, reserveEndTile: true);
                     }
                 }
             }
@@ -69,11 +77,13 @@ namespace Kreuzworträtsel
                     // If tile is empty (no question tile, no letter, not blocked)
                     if (grid[y, x] == null)
                     {
-                        DetermineDirectionAndOffset(x, y);
+                        DetermineDirectionAndOffset(x, y, reserveEndTile: true);
                     }
                 }
             }
             
+            //Fill all reserved tiles
+
             // Go through each main tile
             for (int y = 1; y < grid.GetLength(0) - 1; y++)
             {
@@ -82,7 +92,7 @@ namespace Kreuzworträtsel
                     // If tile is empty (no question tile, no letter, not blocked)
                     if (grid[y, x] == null)
                     {
-                        DetermineDirectionAndOffset(x, y);
+                        DetermineDirectionAndOffset(x, y, reserveEndTile: false);
                     }
                 }
             }
@@ -90,10 +100,11 @@ namespace Kreuzworträtsel
         /// <summary>
         /// Fills the top, left, bottom and right edges of the grid
         /// </summary>
-        private void DetermineDirectionAndOffset(int x, int y)
+        /// <param name="reserveEndTile">if true, then after the answer has been filled in, the tile after that will be reserved for later instead of being filled with question tile</param>
+        private void DetermineDirectionAndOffset(int x, int y, bool reserveEndTile)
         {
             Show();
-            Refresh();
+            //Refresh();
 
             // Determine direction of the text, edges have to have certain orientation
             Point direction = new Point(0, 0);
@@ -101,6 +112,7 @@ namespace Kreuzworträtsel
             bool directionLocked = false;
             bool offsetLocked = false;
             ScrambleOffsets();
+            offsetIndex = 0;
 
             // Bottom row
             if (y == grid.GetUpperBound(0))
@@ -120,14 +132,14 @@ namespace Kreuzworträtsel
             else if (y == 0)
             {
                 SetDirection("vertical", ref direction);
-                offset = verticalOffsets[0];
+                offset = verticalOffsets[offsetIndex];
                 directionLocked = true;
             }
             // Left column
             else if (x == 0)
             {
                 SetDirection("horizontal", ref direction);
-                offset = horizontalOffsets[0];
+                offset = horizontalOffsets[offsetIndex];
                 directionLocked = true;
             }
             // Main tile (not on any edge)
@@ -169,115 +181,129 @@ namespace Kreuzworträtsel
         private void FillAnswer(Point direction, Point offset, bool directionLocked, bool offsetLocked, int x, int y)
         {
             int directionsTested = 0;
-            int offsetsTested = 0;
             (string Question, string Answer) databaseEntry = ("", "");
             // Determine maximum length and what the answer has to match
             bool wordFound = false;
-            while (!wordFound)
+            // First loop: cycle through directions
+            do
             {
-                wordFound = true;
-                string toBeMatched = "";
-                while (true)
+                // Second loop: cycle through offsets
+                do
                 {
-                    // Get current coordinate
-                    Point p = new Point();
-                    p.X = x + (direction.X * (toBeMatched.Length + 1) + offset.X); // (x,y) is question tile, so +1 for start of answer
-                    p.Y = y + (direction.Y * (toBeMatched.Length + 1) + offset.Y);
-
-                    // Out of bounds check
-                    if (p.Y > grid.GetUpperBound(0) || p.X > grid.GetUpperBound(1))
-                        break;
-                    // Empty tile check
-                    else if (grid[p.Y, p.X] == null)
-                        toBeMatched += " ";
-                    // Question tile / blocked tile check
-                    else if (grid[p.Y, p.X].Contains("►") ||
-                             grid[p.Y, p.X].Contains("▼") ||
-                             grid[p.Y, p.X] == "blocked")
-                        break;
-
-                    // Must be letter tile, bc not question tile/blocked and not null
-                    else
+                    string toBeMatched = "";
+                    while (true)
                     {
-                        if (grid[p.Y, p.X].Length > 1)
-                            throw new Exception("supposed letter tile contained more than one letter");
-                        // Add that letter
-                        toBeMatched += grid[p.Y, p.X];
-                    }
-                }
+                        // Get current coordinate
+                        Point p = new Point();
+                        p.X = x + (direction.X * (toBeMatched.Length + 1) + offset.X); // (x,y) is question tile, so +1 for start of answer
+                        p.Y = y + (direction.Y * (toBeMatched.Length + 1) + offset.Y);
 
-                // Loop through fetch attempts
-                string answer = "";
-                bool error = true;
-                int attempt = 0;
-                while (error)
-                {
-                    error = false;
-
-                    databaseEntry = FetchAnswer();
-                    answer = databaseEntry.Answer;
-                    // Check if answer would fit
-                    if (answer.Length > toBeMatched.Length)
-                        error = true;
-                    else
-                    {
-                        // check match with toBeMatched string
-                        for (int i = 0; i < answer.Length; i++)
+                        // Out of bounds check
+                        if (p.Y > grid.GetUpperBound(0) || p.X > grid.GetUpperBound(1))
+                            break;
+                        // Empty tile check
+                        else if (grid[p.Y, p.X] == null)
+                            toBeMatched += " ";
+                        // Question tile / blocked tile check
+                        else if (grid[p.Y, p.X].Contains("►") ||
+                                 grid[p.Y, p.X].Contains("▼") ||
+                                 grid[p.Y, p.X] == "blocked")
+                            break;
+                        // Must be letter tile, bc not question tile/blocked and not null
+                        else
                         {
-                            if (toBeMatched[i] != ' ' && answer[i] != toBeMatched[i])
-                                error = true;
+                            if (grid[p.Y, p.X].Length > 1)
+                                throw new Exception("supposed letter tile contained more than one letter");
+                            // Add that letter
+                            toBeMatched += grid[p.Y, p.X];
                         }
                     }
 
-                    // if answer is shorter than toBeMatched,
-                    // then there has to be a space after the answer
-                    if (toBeMatched.Length > answer.Length)
-                        if (toBeMatched[answer.Length] != ' ')
-                            error = true;
-
-                    attempt++;
-
-                    // Exit fetch loop?
-                    if (attempt == database.Count) // No possible word exists
+                    // Loop through fetch attempts
+                    string answer = "";
+                    int attempts = 0;
+                    while (!wordFound && attempts < database.Count)
                     {
-                        error = false;
-                        wordFound = false;
-                        // Retry upper loop with different conditions
-                        if (!directionLocked)
+                        wordFound = true;
+
+                        databaseEntry = FetchAnswer();
+                        answer = databaseEntry.Answer;
+                        // Answer is longer than toBeMatched
+                        if (answer.Length > toBeMatched.Length)
                         {
-                            SetDirection("swap", ref direction);
-                            directionLocked = true;
+                            wordFound = false;
                         }
-                        else if ()
+                        // Answer is shorter or equal to toBeMatched
+                        else
+                        {
+                            // Check match with toBeMatched string
+                            for (int i = 0; i < answer.Length; i++)
+                            {
+                                if (toBeMatched[i] != ' ' && answer[i] != toBeMatched[i])
+                                    wordFound = false;
+                            }
+                            // if answer is shorter than toBeMatched,
+                            // then there has to be a space after the answer
+                            if (answer.Length < toBeMatched.Length)
+                                if (toBeMatched[answer.Length] != ' ')
+                                    wordFound = false;
+                        }
+
+                        attempts++;
+                    }
+
+                    // Cycle the offset if appropriate
+                    if (!wordFound && !offsetLocked)
+                    {
+                        offset = directionToOffsetTranslator[direction.X][offsetIndex++];
+                        if (offsetIndex == horizontalOffsets.Length)
+                            offsetLocked = true;
                     }
                 }
-            }
-            // Fill the question indicator into the tile
-            string arrow = (direction.X == 1) ? "►" : "\n▼";
-            grid[y, x] = (questionCounter + 1) + arrow;
+                while (!wordFound && !offsetLocked);
 
-            int letterX = 0; // Absolute values
-            int letterY = 0;
-            // Fill the answer into the grid letter by letter
-            for (int c = 0; c < databaseEntry.Answer.Length; c++)
+                // Cycle the direction if appropriate
+                if (!wordFound && !directionLocked)
+                {
+                    SetDirection("swap", ref direction); // TODO: replace ref with return in this function
+                    directionsTested++;
+                }
+            }
+            while (!wordFound && !directionLocked && directionsTested < 2);
+
+            // If wordFound is true, then the loops were exited because a word was found
+            if (wordFound)
             {
-                letterX = x + (direction.X * (c + 1) + offset.X);
-                letterY = y + (direction.Y * (c + 1) + offset.Y);
-                grid[letterY, letterX] = databaseEntry.Answer[c].ToString();
-                //Refresh();
+                // Fill the question indicator into the tile
+                string arrow = (direction.X == 1) ? "►" : "\n▼";
+                grid[y, x] = (questionCounter + 1) + arrow;
+
+                int letterX = 0; // Absolute values
+                int letterY = 0;
+                // Fill the answer into the grid letter by letter
+                for (int c = 0; c < databaseEntry.Answer.Length; c++)
+                {
+                    letterX = x + (direction.X * (c + 1) + offset.X);
+                    letterY = y + (direction.Y * (c + 1) + offset.Y);
+                    grid[letterY, letterX] = databaseEntry.Answer[c].ToString();
+                    //Refresh();
+                }
+
+                // Remove that question/answer from database
+                database.Remove(databaseEntry);
+                if (databaseIndex >= database.Count)
+                    databaseIndex = 0;
+
+                questionCounter++;
+                // in bounds check for next question tile
+                if (letterY + direction.Y < grid.GetLength(0) && letterX + direction.X < grid.GetLength(1))
+                    // empty tile check for next question tile
+                    if (grid[letterY + direction.Y, letterX + direction.X] == null)
+                        DetermineDirectionAndOffset(letterX + direction.X, letterY + direction.Y, reserveEndTile: false);
             }
-
-            // Remove that question/answer from database
-            database.Remove(databaseEntry);
-            if (databaseIndex >= database.Count)
-                databaseIndex = 0;
-
-            questionCounter++;
-            // in bounds check for next question tile
-            if (letterY + direction.Y < grid.GetLength(0) && letterX + direction.X < grid.GetLength(1))
-                // empty tile check for next question tile
-                if (grid[letterY + direction.Y, letterX + direction.X] == null)
-                    DetermineDirectionAndOffset(letterX + direction.X, letterY + direction.Y);
+            // if wordFound is false, then the loops were exited not because a word was found, but because it iterated through all offsets and/or directions till there was nothing left to cycle through
+            else
+                grid[y, x] = "blocked"; // Block the tile from getting question tile and letter from an answer
         }
 
         private void SetDirection(string directionMode, ref Point direction)
@@ -305,51 +331,22 @@ namespace Kreuzworträtsel
             }
         }
 
-        //private void SetOffset(ref Point offset, Point direction, int x, int y)
-        //{
-        //    // Offset at all?
-        //    int percentChance = 66;
-        //    if (random.Next(1, 101) <= percentChance)
-        //    {
-        //        // Determine offset based on direction
-        //        int r = random.Next(2);
-        //        switch (direction.X)
-        //        {
-        //            case 1: // horizontal
-        //                offset.X = -1;
-        //                offset.Y = (r == 0) ? 1 : -1;
-        //            break;
-        //            case 0: // vertical
-        //                offset.X = (r == 0) ? 1 : -1;
-        //                offset.Y = -1;
-        //            break;
-        //        }
-
-        //        // Out of bounds check
-        //        // Get coordinate of first letter
-        //        Point p = new Point();
-        //        p.X = x + direction.X + offset.X; // x, y is question tile
-        //        p.Y = y + direction.Y + offset.Y;
-        //        if (p.X < grid.GetLowerBound(1) || p.X > grid.GetUpperBound(1) ||
-        //            p.Y < grid.GetLowerBound(0) || p.Y > grid.GetUpperBound(0))
-        //            offset = new Point(0, 0);
-        //    }
-        //}
-
         private void ScrambleOffsets()
         {
             Point[] horizontalBuffer = new Point[horizontalOffsets.Length];
             Point[] verticalBuffer = new Point[verticalOffsets.Length];
+            List<int> filledSpots = new List<int>();
             for (int i = 0; i < horizontalOffsets.Length; i++)
             {
                 // Find random index that's still empty
                 while (true)
                 {
                     int index = random.Next(horizontalBuffer.Length);
-                    if (horizontalBuffer[index] == null)
+                    if (!filledSpots.Contains(index))
                     {
                         horizontalBuffer[index] = horizontalOffsets[i];
                         verticalBuffer[index] = verticalOffsets[i];
+                        filledSpots.Add(index);
                         break;
                     }
                 }
@@ -359,24 +356,6 @@ namespace Kreuzworträtsel
             verticalOffsets = verticalBuffer;
         }
 
-        private void CycleOffset(List<int> offsetsTested, ref Point offset, Point direction)
-        {
-            List<int> indeces = new List<int> { 0, 1, 2 }; // TODO: Unfuck (indices get reset, so it's useless)
-            // Get offsets that haven't been tried
-            for (int i = 0; i < offsetsTested.Count(); i++)
-            {
-                if (offsetsTested[i] == indeces[i])
-                {
-                    indeces.Remove(indeces[i]);
-                    break;
-                }
-            }
-
-            if (direction.X == 1)
-                offset = horizontalOffsets[random.Next(indeces.Count())];
-            else
-                offset = verticalOffsets[random.Next(indeces.Count())];
-        }
         /// <summary>
         /// Returns next question/answer tuple, increments databaseIndex
         /// </summary>
@@ -401,7 +380,7 @@ namespace Kreuzworträtsel
             {
                 database2.Add(("", ""));
             }
-            // Remember which spots in database2 have been filled:
+            
             for (int i = 0; i < database.Count; i++)
             {
                 while (true)
