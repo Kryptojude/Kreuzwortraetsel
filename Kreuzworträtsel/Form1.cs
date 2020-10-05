@@ -27,10 +27,10 @@ namespace Kreuzworträtsel
         /// Possible offsets for horizontal pointing question tiles
         /// </summary>
         // TODO: offset probabilities are fucked because an offset for a top row tile to the left is impossible, since the loop goes from left to right, so the left neighbor tile is always occupied already
-        //static Point[] horizontalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(-1, 1), new Point(-1, 1)};
-        //static Point[] verticalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(1, -1), new Point(1, -1) };
-        static Point[] horizontalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(-1, 1) };
-        static Point[] verticalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(1, -1) };
+        static Point[] horizontalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(-1, 1), new Point(-1, 1) };
+        static Point[] verticalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(1, -1), new Point(1, -1) };
+        //static Point[] horizontalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(-1, 1) };
+        //static Point[] verticalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(1, -1) };
         Dictionary<int, Point[]> directionToOffsetTranslator = new Dictionary<int, Point[]>() { {0, verticalOffsets}, {1, horizontalOffsets} };
         int offsetIndex = 0;
         List<Point> reservedTiles = new List<Point>();
@@ -62,34 +62,38 @@ namespace Kreuzworträtsel
             {
                 for (int x = 0; x < grid.GetLength(1); x++)
                 {
-                    // If tile is empty (no question tile, no letter, not blocked)
+                    // If tile is empty (no question tile, no letter, not blocked, not reserved)
                     if (grid[y, x] == null)
                     {
                         DetermineDirectionAndOffset(x, y, reserveEndTile: true);
                     }
                 }
             }
-            // Left and right column
+            // Left and right column // TODO: split into 4 loops, so that right and bottom don't reserve tiles
             for (int x = 0; x < grid.GetLength(0); x += grid.GetUpperBound(0))
             {
                 for (int y = 1; y < grid.GetLength(1) - 1; y++)
                 {
-                    // If tile is empty (no question tile, no letter, not blocked)
+                    // If tile is empty (no question tile, no letter, not blocked, not reserved)
                     if (grid[y, x] == null)
                     {
                         DetermineDirectionAndOffset(x, y, reserveEndTile: true);
                     }
                 }
             }
-            
-            //Fill all reserved tiles
+
+            //Fill all the tiles that were "reserved" in the last two loops
+            foreach (Point p in reservedTiles)
+            {
+                DetermineDirectionAndOffset(p.X, p.Y, reserveEndTile: false);
+            }
 
             // Go through each main tile
             for (int y = 1; y < grid.GetLength(0) - 1; y++)
             {
                 for (int x = 1; x < grid.GetLength(1) - 1; x++)
                 {
-                    // If tile is empty (no question tile, no letter, not blocked)
+                    // If tile is empty (no question tile, no letter, not blocked, not reserved)
                     if (grid[y, x] == null)
                     {
                         DetermineDirectionAndOffset(x, y, reserveEndTile: false);
@@ -175,10 +179,10 @@ namespace Kreuzworträtsel
             }
 
             // TODO: continue with FillAnswer, but then don't continue with filling the main tiles, finish all edge tiles first, reserve the main question tiles that end the generated answers
-            FillAnswer(direction, offset, directionLocked, offsetLocked, x, y);
+            FillAnswer(direction, offset, directionLocked, offsetLocked, x, y, reserveEndTile);
         }
 
-        private void FillAnswer(Point direction, Point offset, bool directionLocked, bool offsetLocked, int x, int y)
+        private void FillAnswer(Point direction, Point offset, bool directionLocked, bool offsetLocked, int x, int y, bool reserveEndTile)
         {
             int directionsTested = 0;
             (string Question, string Answer) databaseEntry = ("", "");
@@ -190,8 +194,18 @@ namespace Kreuzworträtsel
                 // Second loop: cycle through offsets
                 do
                 {
+                    // TODO: out of bounds check so it doesnt give error
+                    // Checks if the starting tile of the answer is used by questionTile
+                    if (grid[y + direction.Y + offset.Y, x + direction.X + offset.X].Contains("►") ||
+                        grid[y + direction.Y + offset.Y, x + direction.X + offset.X].Contains("▼"))
+                    {
+                        // Then move the question tile to make it work anyway with given offset
+                        x += direction.X;
+                        y += direction.Y;
+                    }
+                    // This loop goes along the path of the potential answer till it hits something and saves what an answer has to match in order to fit in here
                     string toBeMatched = "";
-                    while (true)
+                    while (true) // TODO: replace true with the out of bounds condition, get rid of breaks I guess
                     {
                         // Get current coordinate
                         Point p = new Point();
@@ -207,8 +221,9 @@ namespace Kreuzworträtsel
                         // Question tile / blocked tile check
                         else if (grid[p.Y, p.X].Contains("►") ||
                                  grid[p.Y, p.X].Contains("▼") ||
-                                 grid[p.Y, p.X] == "blocked")
-                            break;
+                                 grid[p.Y, p.X] == "blocked"  ||
+                                 grid[p.Y, p.X] == "reserved")
+                                    break;
                         // Must be letter tile, bc not question tile/blocked and not null
                         else
                         {
@@ -295,11 +310,20 @@ namespace Kreuzworträtsel
                     databaseIndex = 0;
 
                 questionCounter++;
-                // in bounds check for next question tile
+                // In bounds check for next question tile
                 if (letterY + direction.Y < grid.GetLength(0) && letterX + direction.X < grid.GetLength(1))
-                    // empty tile check for next question tile
+                    // Empty tile check for next question tile
                     if (grid[letterY + direction.Y, letterX + direction.X] == null)
-                        DetermineDirectionAndOffset(letterX + direction.X, letterY + direction.Y, reserveEndTile: false);
+                        // reserveEndTile controls if the recursive function calling continues
+                        // this is the regular branch that is followed, if this function was called from a main tile
+                        if (!reserveEndTile)
+                            DetermineDirectionAndOffset(letterX + direction.X, letterY + direction.Y, reserveEndTile: false);
+                        // If this was called from the two edge filling loops (reserveEndTile = true), then don't continue the recursive function calling 
+                        else
+                        {
+                            grid[letterY + direction.Y, letterX + direction.X] = "reserved";
+                            reservedTiles.Add(new Point(letterX + direction.X, letterY + direction.Y));
+                        }
             }
             // if wordFound is false, then the loops were exited not because a word was found, but because it iterated through all offsets and/or directions till there was nothing left to cycle through
             else
@@ -419,7 +443,7 @@ namespace Kreuzworträtsel
                         else
                         { // letter tile
                             e.Graphics.DrawRectangle(Pens.Black, x * ts, y * ts, ts, ts);
-                            e.Graphics.DrawString(grid[y, x], Font, Brushes.DarkBlue, x * ts + ts / 2 - textSize.Width / 2, y * ts + ts / 2 - textSize.Height / 2);
+                            //e.Graphics.DrawString(grid[y, x], Font, Brushes.DarkBlue, x * ts + ts / 2 - textSize.Width / 2, y * ts + ts / 2 - textSize.Height / 2);
                         }
                     }
                 }
