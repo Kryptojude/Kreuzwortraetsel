@@ -27,10 +27,10 @@ namespace Kreuzworträtsel
         /// Possible offsets for horizontal pointing question tiles
         /// </summary>
         // TODO: offset probabilities are fucked because an offset for a top row tile to the left is impossible, since the loop goes from left to right, so the left neighbor tile is always occupied already
-        //static Point[] horizontalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(-1, 1), new Point(-1, 1) };
-        //static Point[] verticalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(1, -1), new Point(1, -1) };
-        static Point[] horizontalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(-1, 1) };
-        static Point[] verticalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(1, -1) };
+        static Point[] horizontalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(-1, 1), new Point(-1, 1) };
+        static Point[] verticalOffsets = new Point[5] { new Point(-1, -1), new Point(-1, -1), new Point(0, 0), new Point(1, -1), new Point(1, -1) };
+        //static Point[] horizontalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(-1, 1) };
+        //static Point[] verticalOffsets = new Point[3] { new Point(-1, -1), new Point(0, 0), new Point(1, -1) };
         Dictionary<int, Point[]> directionToOffsetTranslator = new Dictionary<int, Point[]>() { {0, verticalOffsets}, {1, horizontalOffsets} };
         int offsetIndex = 0;
         List<Point> reservedTiles = new List<Point>();
@@ -44,6 +44,9 @@ namespace Kreuzworträtsel
             Width = grid.GetLength(1) * ts + 16;
             Height = grid.GetLength(0) * ts + 39;
             BackgroundImage = dirt;
+            DoubleBuffered = true;
+            Resize += (s, e) => { SuspendLayout(); };
+            ResizeEnd += Form1_Resize;
 
             // Fetch database from file
             StreamReader reader = new StreamReader("databaseDeutsch.txt");
@@ -103,6 +106,16 @@ namespace Kreuzworträtsel
                 }
             }
         }
+
+        private void Form1_Resize(object sender, EventArgs e)
+        {
+            // Increase tile size with window size
+            ts = (Width - 16) / grid.GetLength(0);
+            // Tie width to height
+            Height = Width - 16 + 39;
+            ResumeLayout(true);
+        }
+
         /// <summary>
         /// Fills the top, left, bottom and right edges of the grid
         /// </summary>
@@ -437,6 +450,7 @@ namespace Kreuzworträtsel
             database = database2;
         }
 
+        // TODO: try calling this method to turn the call on and off based on if the user is resizing or not
         protected override void OnPaint(PaintEventArgs e)
         {
             for (int y = 0; y < grid.GetLength(0); y++)
